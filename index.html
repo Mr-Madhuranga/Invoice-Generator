@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice System</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        let invoices = JSON.parse(localStorage.getItem('invoices')) || [];
+        let currentInvoiceId = null;
+
+        function saveInvoices() {
+            localStorage.setItem('invoices', JSON.stringify(invoices));
+            renderInvoiceList();
+        }
+
+        function generateInvoiceId() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2, 15);
+        }
+
+        function createNewInvoice() {
+            const nextInvoiceNumber = invoices.length + 1;
+            const newInvoice = {
+                id: generateInvoiceId(),
+                name: `Invoice ${nextInvoiceNumber}`,
+                items: []
+                // Add other relevant fields here
+            };
+            invoices.push(newInvoice);
+            saveInvoices();
+            editInvoice(newInvoice.id); // Automatically open the new invoice for editing
+        }
+
+        function renderInvoiceList() {
+            const invoiceList = document.getElementById('invoiceList');
+            invoiceList.innerHTML = '';
+            invoices.forEach(invoice => {
+                const listItem = document.createElement('li');
+                listItem.className = 'py-2 px-4 border-b border-gray-200 flex justify-between items-center hover:bg-gray-100';
+                listItem.innerHTML = `
+                    <span class="flex-grow cursor-pointer" onclick="editInvoice('${invoice.id}')">${invoice.name || 'Untitled Invoice'}</span>
+                    <div>
+                        <button class="text-blue-500 hover:text-blue-600 mr-2" onclick="renameInvoicePrompt('${invoice.id}')">Rename</button>
+                        <button class="text-red-500 hover:text-red-600" onclick="deleteInvoice('${invoice.id}')">Delete</button>
+                    </div>
+                `;
+                invoiceList.appendChild(listItem);
+            });
+        }
+
+        function renameInvoicePrompt(id) {
+            Swal.fire({
+                title: 'Rename Invoice',
+                input: 'text',
+                inputValue: invoices.find(invoice => invoice.id === id)?.name || '',
+                showCancelButton: true,
+                confirmButtonText: 'Save',
+                preConfirm: (newName) => {
+                    if (!newName) {
+                        Swal.showValidationMessage('Please enter a name');
+                    }
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    const index = invoices.findIndex(invoice => invoice.id === id);
+                    if (index !== -1) {
+                        invoices[index].name = result.value;
+                        saveInvoices();
+                        Swal.fire({
+                            title: 'Renamed!',
+                            text: 'Invoice name updated.',
+                            icon: 'success',
+                            timer: 1500,
+                            showConfirmButton: false
+                        });
+                    }
+                }
+            });
+        }
+
+        function deleteInvoice(id) {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: "You won't be able to revert this!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Yes, delete it!'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    invoices = invoices.filter(invoice => invoice.id !== id);
+                    saveInvoices();
+                    if (currentInvoiceId === id) {
+                        document.getElementById('invoiceDetails').innerHTML = '<p class="text-gray-500">Select an invoice to edit or create a new one.</p>';
+                        currentInvoiceId = null;
+                    }
+                    Swal.fire({
+                        title: 'Deleted!',
+                        text: 'Your invoice has been deleted.',
+                        icon: 'success',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                }
+            });
+        }
+
+        function editInvoice(id) {
+            currentInvoiceId = id;
+            const invoice = invoices.find(invoice => invoice.id === id);
+            if (invoice) {
+                renderInvoiceDetails(invoice);
+            }
+        }
+
+        function renderInvoiceDetails(invoice) {
+            const invoiceDetails = document.getElementById('invoiceDetails');
+            invoiceDetails.innerHTML = `
+                <h2 class="text-xl font-semibold mb-4">Editing: ${invoice.name || 'Untitled Invoice'}</h2>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="invoiceName">Invoice Name:</label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mb-4" id="invoiceName" type="text" value="${invoice.name || ''}" onchange="updateInvoiceName('${invoice.id}', this.value)">
+                </div>
+                <h3 class="text-lg font-semibold mt-6 mb-2">Items</h3>
+                <div class="mb-2">
+                    <div class="grid grid-cols-4 gap-4 font-semibold">
+                        <span>Item</span>
+                        <span>Quantity</span>
+                        <span>Price</span>
+                        <span>Actions</span>
+                    </div>
+                </div>
+                <ul id="invoiceItems" class="mb-4">
+                    ${invoice.items.map((item, index) => `
+                        <li class="py-2 px-4 border-b border-gray-200 grid grid-cols-4 gap-4 items-center">
+                            <span>${item.description}</span>
+                            <span>${item.quantity}</span>
+                            <span>$${item.price.toFixed(2)}</span>
+                            <div class="flex space-x-2">
+                                <button class="text-blue-500 hover:underline" onclick="editItem('${invoice.id}', ${index})">Edit</button>
+                                <button class="text-red-500 hover:underline" onclick="deleteItem('${invoice.id}', ${index})">Delete</button>
+                            </div>
+                        </li>
+                    `).join('')}
+                </ul>
+                <button class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" onclick="addItem('${invoice.id}')">Add Item</button>
+                <div class="mt-4 text-right">
+                    <h4 class="text-md font-semibold">Total: $${calculateTotal(invoice.items).toFixed(2)}</h4>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" onclick="saveInvoiceDetails('${invoice.id}')">Save Changes</button>
+                    <button class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" onclick="downloadPdf('${invoice.id}')">Download as PDF</button>
+                </div>
+            `;
+        }
+
+        function updateInvoiceName(id, newName) {
+            const index = invoices.findIndex(invoice => invoice.id === id);
+            if (index !== -1) {
+                invoices[index].name = newName;
+            }
+        }
+
+        function addItem(invoiceId) {
+            Swal.fire({
+                title: 'Add New Item',
+                html: `
+                    <input id="swal-input-description" class="swal2-input" placeholder="Description">
+                    <input id="swal-input-quantity" class="swal2-input" placeholder="Quantity" type="number" min="1">
+                    <input id="swal-input-price" class="swal2-input" placeholder="Price" type="number" min="0">
+                `,
+                focusConfirm: false,
+                preConfirm: () => {
+                    return {
+                        description: document.getElementById('swal-input-description').value,
+                        quantity: parseInt(document.getElementById('swal-input-quantity').value),
+                        price: parseFloat(document.getElementById('swal-input-price').value)
+                    };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const { description, quantity, price } = result.value;
+                    if (description && !isNaN(quantity) && !isNaN(price)) {
+                        const invoiceIndex = invoices.findIndex(invoice => invoice.id === invoiceId);
+                        if (invoiceIndex !== -1) {
+                            invoices[invoiceIndex].items.push({ description, quantity, price });
+                            renderInvoiceDetails(invoices[invoiceIndex]);
+                            Swal.fire({
+                                title: 'Item Added!',
+                                text: 'The item has been added to the invoice.',
+                                icon: 'success',
+                                timer: 1500,
+                                showConfirmButton: false
+                            });
+                        }
+                    } else {
+                        Swal.fire('Error', 'Please enter valid item details.', 'error');
+                    }
+                }
+            });
+        }
+
+        function editItem(invoiceId, itemIndex) {
+            const invoice = invoices.find(inv => inv.id === invoiceId);
+            if (invoice && invoice.items[itemIndex]) {
+                const itemToEdit = invoice.items[itemIndex];
+                Swal.fire({
+                    title: 'Edit Item',
+                    html: `
+                        <input id="swal-input-description" class="swal2-input" placeholder="Description" value="${itemToEdit.description}">
+                        <input id="swal-input-quantity" class="swal2-input" placeholder="Quantity" type="number" min="1" value="${itemToEdit.quantity}">
+                        <input id="swal-input-price" class="swal2-input" placeholder="Price" type="number" min="0" value="${itemToEdit.price}">
+                    `,
+                    focusConfirm: false,
+                    preConfirm: () => {
+                        return {
+                            description: document.getElementById('swal-input-description').value,
+                            quantity: parseInt(document.getElementById('swal-input-quantity').value),
+                            price: parseFloat(document.getElementById('swal-input-price').value)
+                        };
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        const { description, quantity, price } = result.value;
+                        if (description && !isNaN(quantity) && !isNaN(price)) {
+                            const invoiceIndex = invoices.findIndex(inv => inv.id === invoiceId);
+                            if (invoiceIndex !== -1) {
+                                invoices[invoiceIndex].items[itemIndex] = { description, quantity, price };
+                                renderInvoiceDetails(invoices[invoiceIndex]);
+                                Swal.fire({
+                                    title: 'Item Updated!',
+                                    text: 'The item has been updated.',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false
+                                });
+                            }
+                        } else {
+                            Swal.fire('Error', 'Please enter valid item details.', 'error');
+                        }
+                    }
+                });
+            }
+        }
+
+        function deleteItem(invoiceId, itemIndex) {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: "You won't be able to revert this!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Yes, delete it!'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const invoiceIndex = invoices.findIndex(invoice => invoice.id === invoiceId);
+                    if (invoiceIndex !== -1) {
+                        invoices[invoiceIndex].items.splice(itemIndex, 1);
+                        renderInvoiceDetails(invoices[invoiceIndex]);
+                        Swal.fire({
+                            title: 'Deleted!',
+                            text: 'The item has been deleted.',
+                            icon: 'success',
+                            timer: 1500,
+                            showConfirmButton: false
+                        });
+                    }
+                }
+            });
+        }
+
+        function calculateTotal(items) {
+            return items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        }
+
+        function saveInvoiceDetails(id) {
+            saveInvoices();
+            Swal.fire({
+                title: 'Saved!',
+                text: 'Invoice details have been saved.',
+                icon: 'success',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+
+        function downloadPdf(invoiceId) {
+            const invoice = invoices.find(inv => inv.id === invoiceId);
+            if (!invoice) {
+                Swal.fire('Error', 'Invoice not found.', 'error');
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF();
+            let y = 20;
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const margin = 15;
+
+            pdf.setFontSize(20);
+            pdf.text(`Invoice: ${invoice.name}`, margin, y);
+            y += 10;
+            pdf.setFontSize(12);
+            pdf.text(`Date: ${new Date().toLocaleDateString()}`, margin, y);
+            y += 15;
+
+            pdf.setFontSize(14);
+            pdf.text('Items', margin, y);
+            y += 8;
+
+            const headers = ['Item', 'Quantity', 'Price', 'Total'];
+            const colWidths = [70, 25, 25, 30];
+            let x = margin;
+
+            pdf.setFontSize(12);
+            pdf.setFont('helvetica', 'bold');
+            headers.forEach((header, i) => {
+                pdf.text(header, x, y);
+                x += colWidths[i];
+            });
+            y += 5;
+            pdf.line(margin, y, pageWidth - margin, y);
+            y += 5;
+            pdf.setFont('helvetica', 'normal');
+
+            invoice.items.forEach(item => {
+                x = margin;
+                pdf.text(item.description, x, y);
+                x += colWidths[0];
+                pdf.text(item.quantity.toString(), x, y);
+                x += colWidths[1];
+                pdf.text(`$${item.price.toFixed(2)}`, x, y);
+                x += colWidths[2];
+                pdf.text(`$${(item.price * item.quantity).toFixed(2)}`, x, y);
+                y += 7;
+            });
+
+            pdf.line(margin, y, pageWidth - margin, y);
+            y += 8;
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(`Total: $${calculateTotal(invoice.items).toFixed(2)}`, pageWidth - margin - 30, y);
+
+            pdf.save(`${invoice.name.replace(/ /g, '_')}.pdf`);
+        }
+
+        document.addEventListener('DOMContentLoaded', renderInvoiceList);
+    </script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="container mx-auto bg-white shadow-md rounded-md overflow-hidden">
+        <header class="bg-blue-500 text-white py-4 px-6">
+            <h1 class="text-2xl font-semibold">Invoice System</h1>
+        </header>
+        <div class="p-6 flex">
+            <div class="w-1/4 pr-4 border-r border-gray-300">
+                <h2 class="text-lg font-semibold mb-2">Invoices</h2>
+                <ul id="invoiceList" class="mb-4">
+                    </ul>
+                <button class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" onclick="createNewInvoice()">Create New Invoice</button>
+            </div>
+            <div class="w-3/4 pl-4" id="invoiceDetails">
+                <p class="text-gray-500">Select an invoice to edit or create a new one.</p>
+                </div>
+        </div>
+    </div>
+</body>
+</html>
