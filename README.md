@@ -23,4 +23,4 @@ I've created an interactive invoice generator with all the features you requeste
 5. Preview your invoice to see how it will look
 6. Download a PDF copy for your records or to send to your client
 
-The interface is intuitive and all calculations happen automatically as you enter information. Would you like me to explain any specific part of the invoice generator in more detail?
+The interface is intuitive and all calculations happen automatically as you enter information. 
